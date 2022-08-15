@@ -40,7 +40,7 @@ module.exports = class AuroraGSI {
     }
 
     getVersion () {
-        return '2.4.1';
+        return '2.4.2';
     }
 
     getAuthor () {
@@ -99,6 +99,10 @@ module.exports = class AuroraGSI {
 		    '2.4.1':
                     `
                         Fix stuff for Canary
+                    `,
+        '2.4.2':
+                    `
+                        Fix user online status
                     `
         };
     }
@@ -120,7 +124,7 @@ module.exports = class AuroraGSI {
   }
 
   getLocalStatus () {
-    return getModule([ 'guildPositions' ]).status;
+    return getModule([ 'getStatus', 'getState' ], false).getStatus(this.getCurrentUser().id);
   }
 
   load () {}// legacy
