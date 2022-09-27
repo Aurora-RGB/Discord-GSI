@@ -1,5 +1,7 @@
 //META{"name":"AuroraGSI","website":"http://www.project-aurora.com/","source":"https://github.com/Popat0/Discord-GSI/blob/master/AuroraGSI.plugin.js"}*//
 
+//const { BdApi } = require("@bandagedbd/bdapi");
+
 /*@cc_on
 @if (@_jscript)
     
@@ -25,8 +27,12 @@ you sure it's even installed?", 0, "Can't install myself", 0x10);
     WScript.Quit();
 @else@*/
 
-function getModule (props) {
+/*function getModule (props) {
 return BdApi.findModuleByProps.apply(null, props);
+}*/
+
+function returnModule (props) {
+  return BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps(props))
 }
 
 
@@ -40,7 +46,7 @@ module.exports = class AuroraGSI {
     }
 
     getVersion () {
-        return '2.4.2';
+        return '2.5.0';
     }
 
     getAuthor () {
@@ -103,6 +109,12 @@ module.exports = class AuroraGSI {
         '2.4.2':
                     `
                         Fix user online status
+                    `,
+        '2.5.0':
+                    `
+                        Small rewrite...
+                        Fixed literally everything.
+                        Stopped using depreciated functions.
                     `
         };
     }
@@ -112,19 +124,19 @@ module.exports = class AuroraGSI {
   }
 
   getSelectedGuild () {
-    return this.getGuild(getModule(['getLastSelectedGuildId'], false).getGuildId());
+    return this.getGuild(returnModule(['getLastSelectedGuildId'], false).getGuildId());
   }
 
   getSelectedTextChannel () {
-    return this.getChannel(getModule(['getLastSelectedChannelId'], false).getChannelId());
+    return this.getChannel(returnModule(['getLastSelectedChannelId'], false).getChannelId());
   }
 
   getSelectedVoiceChannel () {
-    return this.getChannel(getModule(['getLastSelectedChannelId'], false).getVoiceChannelId());
+    return this.getChannel(returnModule(['getLastSelectedChannelId'], false).getVoiceChannelId());
   }
 
   getLocalStatus () {
-    return getModule([ 'getStatus', 'getState' ], false).getStatus(this.getCurrentUser().id);
+    return returnModule([ 'getUserIds' ], false).getStatus(this.getCurrentUser().id);
   }
 
   load () {}// legacy
@@ -163,17 +175,17 @@ module.exports = class AuroraGSI {
     };
     // eslint-disable-next-line no-unused-expressions
     this.lastJson;
-    this.getCurrentUser = getModule([ 'getUser', 'getUsers' ], false).getCurrentUser;
-    this.getStatus = getModule([ 'getApplicationActivity' ], false).getStatus;
-    this.getChannel = getModule([ 'getChannel', 'getDMFromUserId' ], false).getChannel;
-    this.getGuild = getModule([ 'getGuild' ], false).getGuild;
-    this.channels = getModule([ 'getChannelId' ], false);
-    this.FluxDispatcher = getModule([ 'subscribe', 'dispatch' ], false);
-    const { getUser } = getModule([ 'getUser' ], false),
-      voice = getModule([ 'isMute', 'isDeaf', 'isSelfMute', 'isSelfDeaf' ], false),
-      { getCalls } = getModule([ 'getCalls' ], false),
-      { getMutableGuildStates: getUnreadGuilds } = getModule([ 'getMutableGuildStates' ], false),
-      { getTotalMentionCount } = getModule([ 'getTotalMentionCount' ], false),
+    this.getCurrentUser = returnModule([ 'getCurrentUser' ], false).getCurrentUser;
+    this.getStatus = returnModule([ 'getApplicationActivity' ], false).getStatus;
+    this.getChannel = returnModule([ 'getChannel' ], false).getChannel;
+    this.getGuild = returnModule([ 'getGuildCount' ], false).getGuild;
+    this.channels = returnModule([ 'getChannelId' ], false);
+    this.FluxDispatcher = returnModule([ 'wait' ], false);
+    const { getUser } = returnModule([ 'getUser' ], false),
+      voice = returnModule([ 'isMute' ], false),
+      { getCalls } = returnModule([ 'getCalls' ], false),
+      { getMutableGuildStates: getUnreadGuilds } = returnModule([ 'getMutableGuildStates' ], false),
+      { getTotalMentionCount } = returnModule([ 'getTotalMentionCount' ], false),
       isMute = voice.isMute.bind(voice),
       isDeaf = voice.isDeaf.bind(voice),
       isSelfMute = voice.isSelfMute.bind(voice),
@@ -192,7 +204,7 @@ module.exports = class AuroraGSI {
        * } not implemented
        */
       switch (props.type) {
-        case 'PRESENCE_UPDATE':
+        case 'PRESENCE_UPDATES':
           if (localUser && localStatus) {
             this.json.user.id = localUser?.id;
             this.json.user.status = localStatus;
@@ -330,7 +342,7 @@ module.exports = class AuroraGSI {
     };
 
     this.detectPresence = (props) => {
-      if (props.user.id === this.getCurrentUser()?.id) {
+      if (props.updates.filter(user => user.user.id === this.getCurrentUser()?.id)) {
         this.handler(props);
       }
     };
@@ -348,7 +360,7 @@ module.exports = class AuroraGSI {
     this.FluxDispatcher.subscribe('MESSAGE_CREATE', this.detectMention);
     this.FluxDispatcher.subscribe('CHANNEL_SELECT', this.handler);
     this.FluxDispatcher.subscribe('VOICE_CHANNEL_SELECT', this.handler);
-    this.FluxDispatcher.subscribe('PRESENCE_UPDATE', this.detectPresence);
+    this.FluxDispatcher.subscribe('PRESENCE_UPDATES', this.detectPresence);
     this.FluxDispatcher.subscribe('CALL_CREATE', this.detectCall);
     this.voice = {};
     this.unreads = 0;
@@ -370,7 +382,7 @@ module.exports = class AuroraGSI {
     this.FluxDispatcher.unsubscribe('MESSAGE_CREATE', this.detectMention);
     this.FluxDispatcher.unsubscribe('CHANNEL_SELECT', this.handler);
     this.FluxDispatcher.unsubscribe('VOICE_CHANNEL_SELECT', this.handler);
-    this.FluxDispatcher.unsubscribe('PRESENCE_UPDATE', this.detectPresence);
+    this.FluxDispatcher.unsubscribe('PRESENCE_UPDATES', this.detectPresence);
     this.FluxDispatcher.unsubscribe('CALL_CREATE', this.detectCall);
   }
 
