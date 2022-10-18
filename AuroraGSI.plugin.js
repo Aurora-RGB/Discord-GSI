@@ -4,14 +4,14 @@
 
 /*@cc_on
 @if (@_jscript)
-    
+
     // Offer to self-install for clueless users that try to run this directly.
     var shell = WScript.CreateObject("WScript.Shell");
     var fs = new ActiveXObject("Scripting.FileSystemObject");
     var pathPlugins = shell.ExpandEnvironmentStrings("%APPDATA%BetterDiscordplugins");
     var pathSelf = WScript.ScriptFullName;
     // Put the user at ease by addressing them in the first person
-    shell.Popup("It looks like you've mistakenly tried to run me directly. 
+    shell.Popup("It looks like you've mistakenly tried to run me directly.
 't do that!)", 0, "I'm a plugin for BetterDiscord", 0x30);
     if (fs.GetParentFolderName(pathSelf) === fs.GetAbsolutePathName(pathPlugins)) {
         shell.Popup("I'm in the correct folder already.", 0, "I'm already installed", 0x40);
@@ -31,127 +31,142 @@ you sure it's even installed?", 0, "Can't install myself", 0x10);
 return BdApi.findModuleByProps.apply(null, props);
 }*/
 
-function returnModule (props) {
-  return BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps(props))
+function returnModule(props) {
+  return BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps(props), {first: true})
 }
 
+const selectedGuildModule = returnModule(['getLastSelectedGuildId']);
+const selectedChannelModule = returnModule(['getLastSelectedChannelId']);
+const currentUserModule = returnModule(['getCurrentUser']);
+const applicationActivityModule = returnModule(['getApplicationActivity']);
+const channelModule = returnModule(['getChannel']);
+const guildCountModule = returnModule(['getGuildCount']);
+const channelIdModule = returnModule(['getChannelId']);
+const fluxModule = returnModule(['wait']);
+const userModule = returnModule(['getUser']);
+const muteModule = returnModule(['isMute']);
+const callsModule = returnModule(['getCalls']);
+const mutableGuildStatesModule = returnModule(['getMutableGuildStates']);
+const totalMentionCountModule = returnModule(['getTotalMentionCount']);
+const userIdModule = returnModule(['getUserIds']);
 
 module.exports = class AuroraGSI {
-    getName () {
-        return 'AuroraGSI';
-    }
+  getName() {
+    return 'AuroraGSI';
+  }
 
-    getDescription () {
-        return 'Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status';
-    }
+  getDescription() {
+    return 'Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status';
+  }
 
-    getVersion () {
-        return '2.5.0';
-    }
+  getVersion() {
+    return '2.5.0';
+  }
 
-    getAuthor () {
-        return 'Popato & DrMeteor';
-    }
+  getAuthor() {
+    return 'Popato & DrMeteor';
+  }
 
-    getChanges () {
-        return {
-        '1.0.0' :
-                    `
+  getChanges() {
+    return {
+      '1.0.0':
+        `
                         Initial version.
                     `,
-        '1.0.1' :
-                    `
+      '1.0.1':
+        `
                         Added conditions for only reacting to local user.
                     `,
-        '1.0.2' :
-                    `
+      '1.0.2':
+        `
                         Removed isBeingCalled.
                         Removed redundant loop.
                     `,
-        '1.0.3' :
-                    `
+      '1.0.3':
+        `
                         Updated the CDN for the library.
                     `,
-        '1.1' :
-                    `
+      '1.1':
+        `
                         Made the state only be sent if it changed.
                     `,
-        '2.0' :
-                    `
+      '2.0':
+        `
                         Version bump to stop the update prompt derping.
                     `,
-        '2.1.0':
-                    `
+      '2.1.0':
+        `
                         Allow to track mute/deafen statuses outside voice channels.
                         Fix unread status for Enhanced Discord users.
                         Actually fix self-updating loop
                     `,
-        '2.1.1':
-                    `
+      '2.1.1':
+        `
                         Fix "being_called" boolean so it's now usable (triggers when user calls and getting called in DMs)
                     `,
-        '2.2.0':
-                    `
+      '2.2.0':
+        `
                         Rewrite a bunch of stuff
                     `,
-        '2.3.0':
-                    `
+      '2.3.0':
+        `
                         Rewrite some more stuff
                     `,
-        '2.4.0':
-                    `
+      '2.4.0':
+        `
                         Rewrite some more stuff
                     `,
-		    '2.4.1':
-                    `
+      '2.4.1':
+        `
                         Fix stuff for Canary
                     `,
-        '2.4.2':
-                    `
+      '2.4.2':
+        `
                         Fix user online status
                     `,
-        '2.5.0':
-                    `
+      '2.5.0':
+        `
                         Small rewrite...
                         Fixed literally everything.
                         Stopped using depreciated functions.
                     `
-        };
-    }
+    };
+  }
 
-  constructor () {
+  constructor() {
     this.sendJsonToAurora = global._.debounce(this.sendJsonToAurora, 100);
   }
 
-  getSelectedGuild () {
-    return this.getGuild(returnModule(['getLastSelectedGuildId'], false).getGuildId());
+  getSelectedGuild() {
+    return this.getGuild(selectedGuildModule.getGuildId());
   }
 
-  getSelectedTextChannel () {
-    return this.getChannel(returnModule(['getLastSelectedChannelId'], false).getChannelId());
+  getSelectedTextChannel() {
+    return this.getChannel(selectedChannelModule.getChannelId());
   }
 
-  getSelectedVoiceChannel () {
-    return this.getChannel(returnModule(['getLastSelectedChannelId'], false).getVoiceChannelId());
+  getSelectedVoiceChannel() {
+    return this.getChannel(selectedChannelModule.getVoiceChannelId());
   }
 
-  getLocalStatus () {
-    return returnModule([ 'getUserIds' ], false).getStatus(this.getCurrentUser().id);
+  getLocalStatus() {
+    return userIdModule.getStatus(this.getCurrentUser().id);
   }
 
-  load () {}// legacy
+  load() {
+  }// legacy
 
-  start () {
+  start() {
     this.json = {
       provider: {
         name: 'discord',
         appid: -1
       },
-      user:{
+      user: {
         id: -1,
         status: 'undefined',
         self_mute: false,
-        self_deafen : false,
+        self_deafen: false,
         mentions: false,
         mention_count: 0,
         unread_guilds_count: 0,
@@ -175,25 +190,25 @@ module.exports = class AuroraGSI {
     };
     // eslint-disable-next-line no-unused-expressions
     this.lastJson;
-    this.getCurrentUser = returnModule([ 'getCurrentUser' ], false).getCurrentUser;
-    this.getStatus = returnModule([ 'getApplicationActivity' ], false).getStatus;
-    this.getChannel = returnModule([ 'getChannel' ], false).getChannel;
-    this.getGuild = returnModule([ 'getGuildCount' ], false).getGuild;
-    this.channels = returnModule([ 'getChannelId' ], false);
-    this.FluxDispatcher = returnModule([ 'wait' ], false);
-    const { getUser } = returnModule([ 'getUser' ], false),
-      voice = returnModule([ 'isMute' ], false),
-      { getCalls } = returnModule([ 'getCalls' ], false),
-      { getMutableGuildStates: getUnreadGuilds } = returnModule([ 'getMutableGuildStates' ], false),
-      { getTotalMentionCount } = returnModule([ 'getTotalMentionCount' ], false),
+    this.getCurrentUser = currentUserModule.getCurrentUser;
+    this.getStatus = applicationActivityModule.getStatus;
+    this.getChannel = channelModule.getChannel;
+    this.getGuild = guildCountModule.getGuild;
+    this.channels = channelIdModule;
+    this.FluxDispatcher = fluxModule;
+    const {getUser} = userModule,
+      voice = muteModule,
+      {getCalls} = callsModule,
+      {getMutableGuildStates: getUnreadGuilds} = mutableGuildStatesModule,
+      {getTotalMentionCount} = totalMentionCountModule,
       isMute = voice.isMute.bind(voice),
       isDeaf = voice.isDeaf.bind(voice),
       isSelfMute = voice.isSelfMute.bind(voice),
       isSelfDeaf = voice.isSelfDeaf.bind(voice);
-      /*
-       * { getChannel } = getModule([ 'getChannel' ], false), // we dont use this yet
-       * const { getVoiceStates } = getModule([ 'getVoiceState' ], false),
-       */
+    /*
+     * { getChannel } = getModule([ 'getChannel' ], false), // we dont use this yet
+     * const { getVoiceStates } = getModule([ 'getVoiceState' ], false),
+     */
     this.handler = (props) => {
       // eslint-disable-next-line consistent-this
       const localUser = this.getCurrentUser();
@@ -307,7 +322,7 @@ module.exports = class AuroraGSI {
       }
 
       if (JSON.stringify(this.json) !== this.lastJson) {
-        this.lastJson = JSON.stringify(this.json);
+        this.lastJson = JSON.stringify(this.json);  //TODO save and check time instead
         this.sendJsonToAurora(this.json);
       }
     };
@@ -319,8 +334,10 @@ module.exports = class AuroraGSI {
       voice.mute = isMute();
       voice.deafen = isDeaf();
       if (this.voice.mute !== voice.mute || this.voice.deafen !== voice.deafen) {
-        this.handler({ type: 'USER_VOICE_UPDATE',
-          ...voice });
+        this.handler({
+          type: 'USER_VOICE_UPDATE',
+          ...voice
+        });
         Object.assign(this.voice, voice);
       }
     };
@@ -329,14 +346,18 @@ module.exports = class AuroraGSI {
       const uid = this.getCurrentUser()?.id;
       const mentions = getTotalMentionCount();
       if (props.message && !props.message.sendMessageOptions && props.message.author.id !== uid && this.mentions !== mentions) {
-        this.handler({ type: 'MENTIONS_UPDATE',
-          mentions });
+        this.handler({
+          type: 'MENTIONS_UPDATE',
+          mentions
+        });
         this.mentions = mentions;
       }
       const unreads = Object.values(getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length;
       if (unreads !== this.unreads) {
-        this.handler({ type: 'UNREADS_UPDATE',
-          unreads });
+        this.handler({
+          type: 'UNREADS_UPDATE',
+          unreads
+        });
         this.unreads = unreads;
       }
     };
@@ -351,8 +372,10 @@ module.exports = class AuroraGSI {
       setTimeout(() => {
         const being_called = (getCalls().filter((x) => x.ringing.length > 0).length > 0);
         if (being_called !== this.voice.being_called) {
-          this.handler({ type: 'CALL_RING_UPDATE',
-            being_called });
+          this.handler({
+            type: 'CALL_RING_UPDATE',
+            being_called
+          });
           this.voice.being_called = being_called;
         }
       }, 100);
@@ -370,13 +393,13 @@ module.exports = class AuroraGSI {
       const u = this.getCurrentUser();
       if (u?.id) {
         clearInterval(setupInterval);
-        this.handler({ type: 'SETUP' });
+        this.handler({type: 'SETUP'});
       }
     }, 100);
   }
 
 
-  stop () {
+  stop() {
     this.ready = false;
     clearInterval(this.interval);
     this.FluxDispatcher.unsubscribe('MESSAGE_CREATE', this.detectMention);
@@ -386,12 +409,12 @@ module.exports = class AuroraGSI {
     this.FluxDispatcher.unsubscribe('CALL_CREATE', this.detectCall);
   }
 
-  async sendJsonToAurora (json) {
-    fetch('http://localhost:9088/', {
+  async sendJsonToAurora(json) {
+    await fetch('http://localhost:9088/', {
       method: 'POST',
       body: JSON.stringify(json),
-      mode:'no-cors',
-      headers:{
+      mode: 'no-cors',
+      headers: {
         'Content-Type': 'application/json'
       }
     })
