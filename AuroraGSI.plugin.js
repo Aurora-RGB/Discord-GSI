@@ -74,6 +74,8 @@ module.exports = class AuroraGSI {
       isDeaf = muteModule.isDeaf.bind(muteModule),
       isSelfMute = muteModule.isSelfMute.bind(muteModule),
       isSelfDeaf = muteModule.isSelfDeaf.bind(muteModule);
+    this.lastMentions = 0;
+    this.lastUnread = 0;
 
     this.json = {
       provider: {
@@ -108,98 +110,68 @@ module.exports = class AuroraGSI {
       updateTime: new Date().getTime()
     };
 
-    this.handler = (props) => {
-      switch (props.type) {
-        case 'PRESENCE_UPDATES':
-          const localUser = this.getCurrentUser();
-          const localStatus = this.getLocalStatus();
-          if (localUser && localStatus) {
-            this.json.user.id = localUser?.id;
-            this.json.user.status = localStatus;
-          } else {
-            this.json.user.id = -1;
-            this.json.user.status = '';
-          }
-          break;
-
-        case 'CHANNEL_SELECT':
-          const guild = this.getGuild(props.guildId);
-          if (guild) {
-            this.json.guild.id = guild.id;
-            this.json.guild.name = guild.name;
-          } else {
-            this.json.guild.id = -1;
-            this.json.guild.name = '';
-          }
-          const textChannel = this.getChannel(props.channelId);
-          if (textChannel) {
-            this.json.text.id = textChannel.id;
-            this.json.text.type = textChannel.type;
-            switch (textChannel.type) {
-              case 0: // text channel
-                this.json.text.name = textChannel.name;
-                break;
-              case 5: // announcement channel
-                this.json.text.name = textChannel.name;
-                break;
-              case 1: // pm
-                this.json.text.name = getUser(textChannel.recipients[0]).username;
-                break;
-              case 3: // group pm
-                if (textChannel.name) {
-                  this.json.text.name = textChannel.name;
-                } else {
-                  this.json.text.name = textChannel.recipients.map(u => getUser(u).username).join(' ');
-                }
-                break;
-            }
-          } else {
-            this.json.text.id = -1;
-            this.json.text.type = -1;
-            this.json.text.name = '';
-          }
-          break;
-
-        case 'VOICE_CHANNEL_SELECT':
-          const voiceChannel = this.getChannel(props.channelId);
-          if (voiceChannel) {
-            this.json.voice.type = voiceChannel.type;
-            this.json.voice.id = voiceChannel.id;
-            if (voiceChannel.type === 1) { // call
-              this.json.voice.name = getUser(voiceChannel.recipients[0]).username;
-            } else if (voiceChannel.type === 2) { // voice channel
-              this.json.voice.name = voiceChannel.name;
-            }
-          } else {
-            this.json.voice.id = -1;
-            this.json.voice.type = -1;
-            this.json.voice.name = '';
-          }
-          break;
-        case 'USER_VOICE_UPDATE':
-          this.json.user.self_mute = props.self_mute;
-          this.json.user.self_deafen = props.self_deafen;
-          this.json.user.mute = props.mute;
-          this.json.user.deafen = props.deafen;
-          break;
-        case 'UNREADS_UPDATE':
-          this.json.user.unread_messages = props.unreads > 0;
-          this.json.user.unread_guilds_count = props.unreads;
-          break;
-        case 'MENTIONS_UPDATE':
-          this.json.user.mentions = props.mentions > 0;
-          this.json.user.mention_count = props.mentions;
-          break;
-        case 'CALL_RING_UPDATE':
-          this.json.user.being_called = props.being_called;
-          break;
-        default:
-          return
-      }
-
+    this.sendUpdate = () => {
       this.json.updateTime = new Date().getTime();
       this.sendJsonToAurora(this.json).then();
     };
+
+    this.detectChannelSelect = (props) => {
+      console.log('[AuroraGSI] channel select')
+      const guild = this.getGuild(props.guildId);
+      if (guild) {
+        this.json.guild.id = guild.id;
+        this.json.guild.name = guild.name;
+      } else {
+        this.json.guild.id = -1;
+        this.json.guild.name = '';
+      }
+      const textChannel = this.getChannel(props.channelId);
+      if (textChannel) {
+        this.json.text.id = textChannel.id;
+        this.json.text.type = textChannel.type;
+        switch (textChannel.type) {
+          case 0: // text channel
+            this.json.text.name = textChannel.name;
+            break;
+          case 5: // announcement channel
+            this.json.text.name = textChannel.name;
+            break;
+          case 1: // pm
+            this.json.text.name = getUser(textChannel.recipients[0]).username;
+            break;
+          case 3: // group pm
+            if (textChannel.name) {
+              this.json.text.name = textChannel.name;
+            } else {
+              this.json.text.name = textChannel.recipients.map(u => getUser(u).username).join(' ');
+            }
+            break;
+        }
+      } else {
+        this.json.text.id = -1;
+        this.json.text.type = -1;
+        this.json.text.name = '';
+      }
+    }
+
+    this.detectVoiceChannelSelect = (props) => {
+      console.log('[AuroraGSI] voice channel select')
+      const voiceChannel = this.getChannel(props.channelId);
+      if (voiceChannel) {
+        this.json.voice.type = voiceChannel.type;
+        this.json.voice.id = voiceChannel.id;
+        if (voiceChannel.type === 1) { // call
+          this.json.voice.name = getUser(voiceChannel.recipients[0]).username;
+        } else if (voiceChannel.type === 2) { // voice channel
+          this.json.voice.name = voiceChannel.name;
+        }
+      } else {
+        this.json.voice.id = -1;
+        this.json.voice.type = -1;
+        this.json.voice.name = '';
+      }
+      this.sendUpdate();
+    }
 
     this.detectVoiceState = () => {
       const voice = {};
@@ -207,72 +179,86 @@ module.exports = class AuroraGSI {
       voice.self_deafen = isSelfDeaf();
       voice.mute = isMute();
       voice.deafen = isDeaf();
-      if (this.voice.mute !== voice.mute || this.voice.deafen !== voice.deafen) {
-        this.handler({
-          type: 'USER_VOICE_UPDATE',
-          ...voice
-        });
-        Object.assign(this.voice, voice);
+      if (this.voice.mute === voice.mute && this.voice.deafen === voice.deafen) {
+        return;
       }
+      this.json.user.self_mute = voice.self_mute;
+      this.json.user.self_deafen = voice.self_deafen;
+      this.json.user.mute = voice.mute;
+      this.json.user.deafen = voice.deafen;
+      Object.assign(this.voice, voice);
+      console.log('[AuroraGSI] voice state')
+      this.sendUpdate();
     };
 
-    this.detectMention = (props) => {
+    this.detectMessage = (props) => {
       const uid = this.getCurrentUser()?.id;
       const mentions = getTotalMentionCount();
       if (props.message && !props.message.sendMessageOptions && props.message.author.id !== uid && this.mentions !== mentions) {
-        this.handler({
-          type: 'MENTIONS_UPDATE',
-          mentions
-        });
         this.mentions = mentions;
+        this.json.user.mentions = mentions > 0;
+        this.json.user.mention_count = mentions;
       }
-      const unreads = Object.values(getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length;
-      if (unreads !== this.unreads) {
-        this.handler({
-          type: 'UNREADS_UPDATE',
-          unreads
-        });
-        this.unreads = unreads;
+      const unread = Object.values(getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length;
+      this.json.user.unread_messages = unread > 0;
+      this.json.user.unread_guilds_count = unread;
+
+      if (mentions === this.lastMentions && unread === this.lastUnread) {
+        return;
       }
+      this.lastMentions = mentions;
+      this.lastUnread = unread;
+      console.log('[AuroraGSI] message')
+      this.sendUpdate();
     };
 
     this.detectPresence = (props) => {
-      if (props.updates.filter(user => user.user.id === this.getCurrentUser()?.id)) {
-        this.handler(props);
+      if (!props.updates.filter(user => user.user.id === this.getCurrentUser()?.id)) {
+        return;
       }
+      console.log('[AuroraGSI] presence')
+      const localUser = this.getCurrentUser();
+      const localStatus = this.getLocalStatus();
+      if (localUser && localStatus) {
+        this.json.user.id = localUser?.id;
+        this.json.user.status = localStatus;
+      } else {
+        this.json.user.id = -1;
+        this.json.user.status = '';
+      }
+      this.sendUpdate();
     };
 
     this.detectCall = () => {
+      console.log('[AuroraGSI] call')
       setTimeout(() => {
         const being_called = (getCalls().filter((x) => x.ringing.length > 0).length > 0);
         if (being_called !== this.voice.being_called) {
-          this.handler({
-            type: 'CALL_RING_UPDATE',
-            being_called
-          });
+          this.json.user.being_called = being_called;
           this.voice.being_called = being_called;
+          this.sendUpdate();
         }
       }, 100);
     };
+
+    //event names: https://github.com/dorpier/dorpier/wiki/Dispatcher-Events
     Promise.all([
-      this.FluxDispatcher.subscribe('MESSAGE_CREATE', this.detectMention),
-      this.FluxDispatcher.subscribe('CHANNEL_SELECT', this.handler),
-      this.FluxDispatcher.subscribe('VOICE_CHANNEL_SELECT', this.handler),
+      this.FluxDispatcher.subscribe('MESSAGE_CREATE', this.detectMessage),
+      this.FluxDispatcher.subscribe('CHANNEL_SELECT', this.detectChannelSelect),
+      this.FluxDispatcher.subscribe('VOICE_CHANNEL_SELECT', this.detectVoiceChannelSelect),
       this.FluxDispatcher.subscribe('PRESENCE_UPDATES', this.detectPresence),
       this.FluxDispatcher.subscribe('CALL_CREATE', this.detectCall),
       this.FluxDispatcher.subscribe('VOICE_STATE_UPDATES', this.detectVoiceState),
     ]).then();
     this.voice = {};
-    this.unreads = 0;
     this.mentions = 0;
   }
-
   stop() {
     this.ready = false;
     Promise.all([
-      this.FluxDispatcher.unsubscribe('MESSAGE_CREATE', this.detectMention),
-      this.FluxDispatcher.unsubscribe('CHANNEL_SELECT', this.handler),
-      this.FluxDispatcher.unsubscribe('VOICE_CHANNEL_SELECT', this.handler),
+      this.FluxDispatcher.unsubscribe('MESSAGE_CREATE', this.detectMessage),
+      this.FluxDispatcher.unsubscribe('CHANNEL_SELECT', this.detectChannelSelect),
+      this.FluxDispatcher.unsubscribe('VOICE_CHANNEL_SELECT', this.detectVoiceChannelSelect),
       this.FluxDispatcher.unsubscribe('PRESENCE_UPDATES', this.detectPresence),
       this.FluxDispatcher.unsubscribe('CALL_CREATE', this.detectCall),
       this.FluxDispatcher.unsubscribe('VOICE_STATE_UPDATES', this.detectVoiceState),
