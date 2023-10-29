@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.5.1
+ * @version 2.5.2
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -40,7 +40,6 @@ function returnModule(props) {
 }
 
 const currentUserModule = returnModule(['getCurrentUser']);
-const applicationActivityModule = returnModule(['getApplicationActivity']);
 const channelModule = returnModule(['getChannel']);
 const guildCountModule = returnModule(['getGuildCount']);
 const fluxModule = returnModule(['wait']);
@@ -51,9 +50,41 @@ const mutableGuildStatesModule = returnModule(['getMutableGuildStates']);
 const totalMentionCountModule = returnModule(['getTotalMentionCount']);
 const userIdModule = returnModule(['getUserIds']);
 
+function throttle(func, wait, options) {
+  let context, args, result;
+  let timeout = null;
+  let previous = 0;
+  if (!options) options = {};
+  const later = function () {
+    previous = options.leading === false ? 0 : Date.now();
+    timeout = null;
+    result = func.apply(context, args);
+    if (!timeout) context = args = null;
+  };
+  return function() {
+    const now = Date.now();
+    if (!previous && options.leading === false) previous = now;
+    const remaining = wait - (now - previous);
+    context = this;
+    args = arguments;
+    if (remaining <= 0 || remaining > wait) {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
+      previous = now;
+      result = func.apply(context, args);
+      if (!timeout) context = args = null;
+    } else if (!timeout && options.trailing !== false) {
+      timeout = setTimeout(later, remaining);
+    }
+    return result;
+  };
+}
+
 module.exports = class AuroraGSI {
   constructor() {
-    this.sendJsonToAurora = global._.debounce(this.sendJsonToAurora, 100);
+    this.sendJsonToAurora = throttle(this.sendJsonToAurora, 100);
   }
 
   getLocalStatus() {
@@ -62,7 +93,6 @@ module.exports = class AuroraGSI {
 
   start() {
     this.getCurrentUser = currentUserModule.getCurrentUser;
-    this.getStatus = applicationActivityModule.getStatus;
     this.getChannel = channelModule.getChannel;
     this.getGuild = guildCountModule.getGuild;
     this.FluxDispatcher = fluxModule;
@@ -213,7 +243,7 @@ module.exports = class AuroraGSI {
     };
 
     this.detectPresence = (props) => {
-      if (!props.updates.filter(user => user.user.id === this.getCurrentUser()?.id)) {
+      if (props.updates.filter(user => user.user.id === this.getCurrentUser()?.id)) {
         return;
       }
       console.log('[AuroraGSI] presence')
