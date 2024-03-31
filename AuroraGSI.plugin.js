@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.5.2
+ * @version 2.5.3
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -35,20 +35,25 @@ you sure it's even installed?", 0, "Can't install myself", 0x10);
     WScript.Quit();
 @else@*/
 
-function returnModule(props) {
+function returnModuleInstant(props) {
   return BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps(props), {first: true})
 }
 
-const currentUserModule = returnModule(['getCurrentUser']);
-const channelModule = returnModule(['getChannel']);
-const guildCountModule = returnModule(['getGuildCount']);
+async function returnModule(props) {
+  return await BdApi.Webpack.waitForModule(BdApi.Webpack.Filters.byProps(props), {first: true})
+}
+
+async function returnStore(name) {
+  return await BdApi.Webpack.getStore(name)
+}
+
 const fluxModule = returnModule(['wait']);
 const userModule = returnModule(['getUser']);
 const muteModule = returnModule(['isMute']);
 const callsModule = returnModule(['getCalls']);
 const mutableGuildStatesModule = returnModule(['getMutableGuildStates']);
 const totalMentionCountModule = returnModule(['getTotalMentionCount']);
-const userIdModule = returnModule(['getUserIds']);
+const userIdModule = returnModuleInstant(['getUserIds']);
 
 function throttle(func, wait, options) {
   let context, args, result;
@@ -91,19 +96,29 @@ module.exports = class AuroraGSI {
     return userIdModule.getStatus(this.getCurrentUser().id);
   }
 
-  start() {
-    this.getCurrentUser = currentUserModule.getCurrentUser;
-    this.getChannel = channelModule.getChannel;
-    this.getGuild = guildCountModule.getGuild;
-    this.FluxDispatcher = fluxModule;
-    const {getUser} = userModule,
-      {getCalls} = callsModule,
-      {getMutableGuildStates: getUnreadGuilds} = mutableGuildStatesModule,
-      {getTotalMentionCount} = totalMentionCountModule,
-      isMute = muteModule.isMute.bind(muteModule),
-      isDeaf = muteModule.isDeaf.bind(muteModule),
-      isSelfMute = muteModule.isSelfMute.bind(muteModule),
-      isSelfDeaf = muteModule.isSelfDeaf.bind(muteModule);
+  async start() {
+    returnModule(['getCurrentUser']).then(currentUserModule => {
+      this.getCurrentUser = currentUserModule.getCurrentUser;
+    });
+
+    returnStore('ChannelStore').then(channelModule => {
+      console.log('channelModule: ', channelModule)
+      this.getChannel = channelModule.getChannel;
+    })
+
+    returnModule(['getGuildCount']).then(guildCountModule => {
+      this.getGuild = guildCountModule.getGuild;
+    })
+
+    this.FluxDispatcher = await fluxModule;
+    const {getUser} = await userModule,
+      {getCalls} = await callsModule,
+      {getMutableGuildStates: getUnreadGuilds} = await mutableGuildStatesModule,
+      {getTotalMentionCount} = await totalMentionCountModule,
+      isMute = (await muteModule).isMute.bind(await muteModule),
+      isDeaf = (await muteModule).isDeaf.bind(await muteModule),
+      isSelfMute = (await muteModule).isSelfMute.bind(await muteModule),
+      isSelfDeaf = (await muteModule).isSelfDeaf.bind(await muteModule);
     this.lastMentions = 0;
     this.lastUnread = 0;
 
@@ -182,6 +197,7 @@ module.exports = class AuroraGSI {
         this.json.text.type = -1;
         this.json.text.name = '';
       }
+      this.sendUpdate();
     }
 
     this.detectVoiceChannelSelect = (props) => {
@@ -304,6 +320,6 @@ module.exports = class AuroraGSI {
         'Content-Type': 'application/json'
       }
     })
-      .catch(error => console.warn(`Aurora GSI error: ${error}`));
+      .catch(error => console.warn(`Aurora GSI error: `, error));
   }
 };
