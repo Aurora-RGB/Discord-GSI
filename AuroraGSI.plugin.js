@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.5.3
+ * @version 2.5.4
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -122,6 +122,8 @@ module.exports = class AuroraGSI {
     this.lastMentions = 0;
     this.lastUnread = 0;
 
+    this.speakers = new Set();
+
     this.json = {
       provider: {
         name: 'discord',
@@ -129,14 +131,15 @@ module.exports = class AuroraGSI {
       },
       user: {
         id: this.getCurrentUser()?.id,
-        status: this.getLocalStatus,
+        status: this.getLocalStatus(),
         self_mute: isSelfMute(),
         self_deafen: isSelfDeaf(),
         mentions: getTotalMentionCount().length > 0,
         mention_count: getTotalMentionCount().length,
         unread_guilds_count: Object.values(getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length,
         unread_messages: Object.values(getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length > 0,
-        being_called: false
+        being_called: false,
+        is_speaking: false,
       },
       guild: {
         id: -1,
@@ -150,7 +153,8 @@ module.exports = class AuroraGSI {
       voice: {
         id: -1,
         type: -1,
-        name: ''
+        name: '',
+        somebody_speaking: false,
       },
       updateTime: new Date().getTime()
     };
@@ -211,6 +215,9 @@ module.exports = class AuroraGSI {
         } else if (voiceChannel.type === 2) { // voice channel
           this.json.voice.name = voiceChannel.name;
         }
+        if (!this.voice.name){
+          this.speakers.clear();
+        }
       } else {
         this.json.voice.id = -1;
         this.json.voice.type = -1;
@@ -220,6 +227,7 @@ module.exports = class AuroraGSI {
     }
 
     this.detectVoiceState = () => {
+      console.log('[AuroraGSI] voice state')
       const voice = {};
       voice.self_mute = isSelfMute();
       voice.self_deafen = isSelfDeaf();
@@ -233,7 +241,6 @@ module.exports = class AuroraGSI {
       this.json.user.mute = voice.mute;
       this.json.user.deafen = voice.deafen;
       Object.assign(this.voice, voice);
-      console.log('[AuroraGSI] voice state')
       this.sendUpdate();
     };
 
@@ -259,19 +266,14 @@ module.exports = class AuroraGSI {
     };
 
     this.detectPresence = (props) => {
-      if (props.updates.filter(user => user.user.id === this.getCurrentUser()?.id)) {
+      if (props.updates.some(user => user.user.id === this.getCurrentUser()?.id)) {
         return;
       }
       console.log('[AuroraGSI] presence')
       const localUser = this.getCurrentUser();
       const localStatus = this.getLocalStatus();
-      if (localUser && localStatus) {
-        this.json.user.id = localUser?.id;
-        this.json.user.status = localStatus;
-      } else {
-        this.json.user.id = -1;
-        this.json.user.status = '';
-      }
+      this.json.user.id = localUser?.id ?? -1;
+      this.json.user.status = localStatus ?? '';
       this.sendUpdate();
     };
 
@@ -287,12 +289,36 @@ module.exports = class AuroraGSI {
       }, 100);
     };
 
+    this.detectSpeech = (props) => {
+      console.log('[AuroraGSI] event: ', props)
+
+      if (props.userId === this.getCurrentUser()?.id) {
+        if (this.json.user.is_speaking === props.speakingFlags)
+          return;
+        this.json.user.is_speaking = props.speakingFlags > 0;
+        this.sendUpdate();
+      } else {
+        if (props.speakingFlags === 1) {
+          this.speakers.add(props.userId)
+        } else {
+          this.speakers.delete(props.userId)
+        }
+        console.log("[AuroraGSI] speakers: ", this.speakers)
+        const isSomeoneSpeaking = this.speakers.size > 0;
+        if (this.json.voice.somebody_speaking === isSomeoneSpeaking)
+          return;
+        this.json.voice.somebody_speaking = isSomeoneSpeaking;
+        this.sendUpdate();
+      }
+    }
+
     //event names: https://github.com/dorpier/dorpier/wiki/Dispatcher-Events
     Promise.all([
       this.FluxDispatcher.subscribe('MESSAGE_CREATE', this.detectMessage),
       this.FluxDispatcher.subscribe('CHANNEL_SELECT', this.detectChannelSelect),
       this.FluxDispatcher.subscribe('VOICE_CHANNEL_SELECT', this.detectVoiceChannelSelect),
       this.FluxDispatcher.subscribe('PRESENCE_UPDATES', this.detectPresence),
+      this.FluxDispatcher.subscribe('SPEAKING', this.detectSpeech),
       this.FluxDispatcher.subscribe('CALL_CREATE', this.detectCall),
       this.FluxDispatcher.subscribe('VOICE_STATE_UPDATES', this.detectVoiceState),
     ]).then();
