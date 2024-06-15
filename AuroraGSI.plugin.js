@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.5.4
+ * @version 2.5.5
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -90,10 +90,166 @@ function throttle(func, wait, options) {
 module.exports = class AuroraGSI {
   constructor() {
     this.sendJsonToAurora = throttle(this.sendJsonToAurora, 100);
+
+    //event names: https://github.com/dorpier/dorpier/wiki/Dispatcher-Events
+    this.events = [
+      {eventName: 'MESSAGE_CREATE', method: this.detectMessage},
+      {eventName: 'CHANNEL_SELECT', method: this.detectChannelSelect},
+      {eventName: 'VOICE_CHANNEL_SELECT', method: this.detectVoiceChannelSelect},
+      {eventName: 'PRESENCE_UPDATES', method: this.detectPresence},
+      {eventName: 'SPEAKING', method: this.detectSpeech},
+      {eventName: 'CALL_CREATE', method: this.detectCall},
+      {eventName: 'VOICE_STATE_UPDATES', method: this.detectVoiceState},
+    ]
   }
 
   getLocalStatus() {
     return userIdModule.getStatus(this.getCurrentUser().id);
+  }
+
+  detectChannelSelect = (props) => {
+    console.log('[AuroraGSI] channel select')
+    const guild = this.getGuild(props.guildId);
+    if (guild) {
+      this.json.guild.id = guild.id;
+      this.json.guild.name = guild.name;
+    } else {
+      this.json.guild.id = -1;
+      this.json.guild.name = '';
+    }
+    const textChannel = this.getChannel(props.channelId);
+    if (textChannel) {
+      this.json.text.id = textChannel.id;
+      this.json.text.type = textChannel.type;
+      switch (textChannel.type) {
+        case 0: // text channel
+          this.json.text.name = textChannel.name;
+          break;
+        case 5: // announcement channel
+          this.json.text.name = textChannel.name;
+          break;
+        case 1: // pm
+          this.json.text.name = this.getUser(textChannel.recipients[0]).username;
+          break;
+        case 3: // group pm
+          if (textChannel.name) {
+            this.json.text.name = textChannel.name;
+          } else {
+            this.json.text.name = textChannel.recipients.map(u => this.getUser(u).username).join(' ');
+          }
+          break;
+      }
+    } else {
+      this.json.text.id = -1;
+      this.json.text.type = -1;
+      this.json.text.name = '';
+    }
+    this.sendUpdate();
+  }
+
+  detectVoiceChannelSelect = (props) => {
+    console.log('[AuroraGSI] voice channel select')
+    const voiceChannel = this.getChannel(props.channelId);
+    if (voiceChannel) {
+      this.json.voice.type = voiceChannel.type;
+      this.json.voice.id = voiceChannel.id;
+      if (voiceChannel.type === 1) { // call
+        this.json.voice.name = this.getUser(voiceChannel.recipients[0]).username;
+      } else if (voiceChannel.type === 2) { // voice channel
+        this.json.voice.name = voiceChannel.name;
+      }
+      if (!this.voice.name){
+        this.speakers.clear();
+      }
+    } else {
+      this.json.voice.id = -1;
+      this.json.voice.type = -1;
+      this.json.voice.name = '';
+    }
+    this.sendUpdate();
+  }
+
+  detectVoiceState = () => {
+    console.log('[AuroraGSI] voice state')
+    const voice = {};
+    voice.self_mute = this.isSelfMute();
+    voice.self_deafen = this.isSelfDeaf();
+    voice.mute = this.isMute();
+    voice.deafen = this.isDeaf();
+    if (this.voice.mute === voice.mute && this.voice.deafen === voice.deafen) {
+      return;
+    }
+    this.json.user.self_mute = voice.self_mute;
+    this.json.user.self_deafen = voice.self_deafen;
+    this.json.user.mute = voice.mute;
+    this.json.user.deafen = voice.deafen;
+    this.sendUpdate();
+  };
+
+  detectMessage = (props) => {
+    const uid = this.getCurrentUser()?.id;
+    const mentions = this.getTotalMentionCount();
+    if (props.message && !props.message.sendMessageOptions && props.message.author.id !== uid && this.mentions !== mentions) {
+      this.mentions = mentions;
+      this.json.user.mentions = mentions > 0;
+      this.json.user.mention_count = mentions;
+    }
+    const unread = Object.values(this.getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length;
+    this.json.user.unread_messages = unread > 0;
+    this.json.user.unread_guilds_count = unread;
+
+    if (mentions === this.lastMentions && unread === this.lastUnread) {
+      return;
+    }
+    this.lastMentions = mentions;
+    this.lastUnread = unread;
+    console.log('[AuroraGSI] message')
+    this.sendUpdate();
+  };
+
+  detectPresence = (props) => {
+    if (props.updates.some(user => user.user.id === this.getCurrentUser()?.id)) {
+      return;
+    }
+    console.log('[AuroraGSI] presence')
+    const localUser = this.getCurrentUser();
+    const localStatus = this.getLocalStatus();
+    this.json.user.id = localUser?.id ?? -1;
+    this.json.user.status = localStatus ?? '';
+    this.sendUpdate();
+  };
+
+  detectCall = () => {
+    console.log('[AuroraGSI] call')
+    setTimeout(() => {
+      const being_called = (this.getCalls().filter((x) => x.ringing.length > 0).length > 0);
+      if (being_called !== this.voice.being_called) {
+        this.json.user.being_called = being_called;
+        this.voice.being_called = being_called;
+        this.sendUpdate();
+      }
+    }, 100);
+  };
+
+  detectSpeech = (props) => {
+    if (props.userId === this.getCurrentUser()?.id) {
+      if (this.json.user.is_speaking === props.speakingFlags)
+        return;
+      this.json.user.is_speaking = props.speakingFlags > 0;
+      this.sendUpdate();
+    } else {
+      if (props.speakingFlags === 1) {
+        this.speakers.add(props.userId)
+      } else {
+        this.speakers.delete(props.userId)
+      }
+      console.log("[AuroraGSI] speakers: ", this.speakers)
+      const isSomeoneSpeaking = this.speakers.size > 0;
+      if (this.json.voice.somebody_speaking === isSomeoneSpeaking)
+        return;
+      this.json.voice.somebody_speaking = isSomeoneSpeaking;
+      this.sendUpdate();
+    }
   }
 
   async start() {
@@ -102,7 +258,6 @@ module.exports = class AuroraGSI {
     });
 
     returnStore('ChannelStore').then(channelModule => {
-      console.log('channelModule: ', channelModule)
       this.getChannel = channelModule.getChannel;
     })
 
@@ -119,6 +274,18 @@ module.exports = class AuroraGSI {
       isDeaf = (await muteModule).isDeaf.bind(await muteModule),
       isSelfMute = (await muteModule).isSelfMute.bind(await muteModule),
       isSelfDeaf = (await muteModule).isSelfDeaf.bind(await muteModule);
+
+    //console.log('[AuroraGSI] voiceChannelModule', await voiceChannelModule)
+
+    this.getUser = getUser;
+    this.getCalls = getCalls;
+    this.getUnreadGuilds = getUnreadGuilds;
+    this.getTotalMentionCount = getTotalMentionCount;
+    this.isMute = isMute;
+    this.isDeaf = isDeaf;
+    this.isSelfMute = isSelfMute;
+    this.isSelfDeaf = isSelfDeaf;
+
     this.lastMentions = 0;
     this.lastUnread = 0;
 
@@ -132,12 +299,12 @@ module.exports = class AuroraGSI {
       user: {
         id: this.getCurrentUser()?.id,
         status: this.getLocalStatus(),
-        self_mute: isSelfMute(),
-        self_deafen: isSelfDeaf(),
-        mentions: getTotalMentionCount().length > 0,
-        mention_count: getTotalMentionCount().length,
-        unread_guilds_count: Object.values(getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length,
-        unread_messages: Object.values(getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length > 0,
+        self_mute: this.isSelfMute(),
+        self_deafen: this.isSelfDeaf(),
+        mentions: this.getTotalMentionCount().length > 0,
+        mention_count: this.getTotalMentionCount().length,
+        unread_guilds_count: Object.values(this.getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length,
+        unread_messages: Object.values(this.getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length > 0,
         being_called: false,
         is_speaking: false,
       },
@@ -164,177 +331,14 @@ module.exports = class AuroraGSI {
       this.sendJsonToAurora(this.json).then();
     };
 
-    this.detectChannelSelect = (props) => {
-      console.log('[AuroraGSI] channel select')
-      const guild = this.getGuild(props.guildId);
-      if (guild) {
-        this.json.guild.id = guild.id;
-        this.json.guild.name = guild.name;
-      } else {
-        this.json.guild.id = -1;
-        this.json.guild.name = '';
-      }
-      const textChannel = this.getChannel(props.channelId);
-      if (textChannel) {
-        this.json.text.id = textChannel.id;
-        this.json.text.type = textChannel.type;
-        switch (textChannel.type) {
-          case 0: // text channel
-            this.json.text.name = textChannel.name;
-            break;
-          case 5: // announcement channel
-            this.json.text.name = textChannel.name;
-            break;
-          case 1: // pm
-            this.json.text.name = getUser(textChannel.recipients[0]).username;
-            break;
-          case 3: // group pm
-            if (textChannel.name) {
-              this.json.text.name = textChannel.name;
-            } else {
-              this.json.text.name = textChannel.recipients.map(u => getUser(u).username).join(' ');
-            }
-            break;
-        }
-      } else {
-        this.json.text.id = -1;
-        this.json.text.type = -1;
-        this.json.text.name = '';
-      }
-      this.sendUpdate();
-    }
+    this.events.forEach(x => this.FluxDispatcher.subscribe(x.eventName, x.method))
 
-    this.detectVoiceChannelSelect = (props) => {
-      console.log('[AuroraGSI] voice channel select')
-      const voiceChannel = this.getChannel(props.channelId);
-      if (voiceChannel) {
-        this.json.voice.type = voiceChannel.type;
-        this.json.voice.id = voiceChannel.id;
-        if (voiceChannel.type === 1) { // call
-          this.json.voice.name = getUser(voiceChannel.recipients[0]).username;
-        } else if (voiceChannel.type === 2) { // voice channel
-          this.json.voice.name = voiceChannel.name;
-        }
-        if (!this.voice.name){
-          this.speakers.clear();
-        }
-      } else {
-        this.json.voice.id = -1;
-        this.json.voice.type = -1;
-        this.json.voice.name = '';
-      }
-      this.sendUpdate();
-    }
-
-    this.detectVoiceState = () => {
-      console.log('[AuroraGSI] voice state')
-      const voice = {};
-      voice.self_mute = isSelfMute();
-      voice.self_deafen = isSelfDeaf();
-      voice.mute = isMute();
-      voice.deafen = isDeaf();
-      if (this.voice.mute === voice.mute && this.voice.deafen === voice.deafen) {
-        return;
-      }
-      this.json.user.self_mute = voice.self_mute;
-      this.json.user.self_deafen = voice.self_deafen;
-      this.json.user.mute = voice.mute;
-      this.json.user.deafen = voice.deafen;
-      Object.assign(this.voice, voice);
-      this.sendUpdate();
-    };
-
-    this.detectMessage = (props) => {
-      const uid = this.getCurrentUser()?.id;
-      const mentions = getTotalMentionCount();
-      if (props.message && !props.message.sendMessageOptions && props.message.author.id !== uid && this.mentions !== mentions) {
-        this.mentions = mentions;
-        this.json.user.mentions = mentions > 0;
-        this.json.user.mention_count = mentions;
-      }
-      const unread = Object.values(getUnreadGuilds()).filter(obj => Object.values(obj).includes(true)).length;
-      this.json.user.unread_messages = unread > 0;
-      this.json.user.unread_guilds_count = unread;
-
-      if (mentions === this.lastMentions && unread === this.lastUnread) {
-        return;
-      }
-      this.lastMentions = mentions;
-      this.lastUnread = unread;
-      console.log('[AuroraGSI] message')
-      this.sendUpdate();
-    };
-
-    this.detectPresence = (props) => {
-      if (props.updates.some(user => user.user.id === this.getCurrentUser()?.id)) {
-        return;
-      }
-      console.log('[AuroraGSI] presence')
-      const localUser = this.getCurrentUser();
-      const localStatus = this.getLocalStatus();
-      this.json.user.id = localUser?.id ?? -1;
-      this.json.user.status = localStatus ?? '';
-      this.sendUpdate();
-    };
-
-    this.detectCall = () => {
-      console.log('[AuroraGSI] call')
-      setTimeout(() => {
-        const being_called = (getCalls().filter((x) => x.ringing.length > 0).length > 0);
-        if (being_called !== this.voice.being_called) {
-          this.json.user.being_called = being_called;
-          this.voice.being_called = being_called;
-          this.sendUpdate();
-        }
-      }, 100);
-    };
-
-    this.detectSpeech = (props) => {
-      console.log('[AuroraGSI] event: ', props)
-
-      if (props.userId === this.getCurrentUser()?.id) {
-        if (this.json.user.is_speaking === props.speakingFlags)
-          return;
-        this.json.user.is_speaking = props.speakingFlags > 0;
-        this.sendUpdate();
-      } else {
-        if (props.speakingFlags === 1) {
-          this.speakers.add(props.userId)
-        } else {
-          this.speakers.delete(props.userId)
-        }
-        console.log("[AuroraGSI] speakers: ", this.speakers)
-        const isSomeoneSpeaking = this.speakers.size > 0;
-        if (this.json.voice.somebody_speaking === isSomeoneSpeaking)
-          return;
-        this.json.voice.somebody_speaking = isSomeoneSpeaking;
-        this.sendUpdate();
-      }
-    }
-
-    //event names: https://github.com/dorpier/dorpier/wiki/Dispatcher-Events
-    Promise.all([
-      this.FluxDispatcher.subscribe('MESSAGE_CREATE', this.detectMessage),
-      this.FluxDispatcher.subscribe('CHANNEL_SELECT', this.detectChannelSelect),
-      this.FluxDispatcher.subscribe('VOICE_CHANNEL_SELECT', this.detectVoiceChannelSelect),
-      this.FluxDispatcher.subscribe('PRESENCE_UPDATES', this.detectPresence),
-      this.FluxDispatcher.subscribe('SPEAKING', this.detectSpeech),
-      this.FluxDispatcher.subscribe('CALL_CREATE', this.detectCall),
-      this.FluxDispatcher.subscribe('VOICE_STATE_UPDATES', this.detectVoiceState),
-    ]).then();
     this.voice = {};
     this.mentions = 0;
   }
   stop() {
     this.ready = false;
-    Promise.all([
-      this.FluxDispatcher.unsubscribe('MESSAGE_CREATE', this.detectMessage),
-      this.FluxDispatcher.unsubscribe('CHANNEL_SELECT', this.detectChannelSelect),
-      this.FluxDispatcher.unsubscribe('VOICE_CHANNEL_SELECT', this.detectVoiceChannelSelect),
-      this.FluxDispatcher.unsubscribe('PRESENCE_UPDATES', this.detectPresence),
-      this.FluxDispatcher.unsubscribe('CALL_CREATE', this.detectCall),
-      this.FluxDispatcher.unsubscribe('VOICE_STATE_UPDATES', this.detectVoiceState),
-    ]).then();
+    this.events.forEach(x => this.FluxDispatcher.unsubscribe(x.eventName, x.method))
   }
 
   async sendJsonToAurora(json) {
@@ -344,7 +348,8 @@ module.exports = class AuroraGSI {
       mode: 'no-cors',
       headers: {
         'Content-Type': 'application/json'
-      }
+      },
+      priority: 'high',
     })
       .catch(error => console.warn(`Aurora GSI error: `, error));
   }
