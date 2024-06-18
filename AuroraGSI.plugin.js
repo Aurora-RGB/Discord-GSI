@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.5.5
+ * @version 2.6.0
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -342,7 +342,7 @@ module.exports = class AuroraGSI {
   }
 
   async sendJsonToAurora(json) {
-    await fetch('http://localhost:9088/', {
+    await fetch('http://localhost:9088/gameState/discord', {
       method: 'POST',
       body: JSON.stringify(json),
       mode: 'no-cors',
