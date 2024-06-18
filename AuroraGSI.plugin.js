@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.6.0
+ * @version 2.6.1
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -111,7 +111,7 @@ module.exports = class AuroraGSI {
     console.log('[AuroraGSI] channel select')
     const guild = this.getGuild(props.guildId);
     if (guild) {
-      this.json.guild.id = guild.id;
+      this.json.guild.id = parseInt(guild.id);
       this.json.guild.name = guild.name;
     } else {
       this.json.guild.id = -1;
@@ -119,7 +119,7 @@ module.exports = class AuroraGSI {
     }
     const textChannel = this.getChannel(props.channelId);
     if (textChannel) {
-      this.json.text.id = textChannel.id;
+      this.json.text.id = parseInt(textChannel.id);
       this.json.text.type = textChannel.type;
       switch (textChannel.type) {
         case 0: // text channel
@@ -152,7 +152,7 @@ module.exports = class AuroraGSI {
     const voiceChannel = this.getChannel(props.channelId);
     if (voiceChannel) {
       this.json.voice.type = voiceChannel.type;
-      this.json.voice.id = voiceChannel.id;
+      this.json.voice.id = parseInt(voiceChannel.id);
       if (voiceChannel.type === 1) { // call
         this.json.voice.name = this.getUser(voiceChannel.recipients[0]).username;
       } else if (voiceChannel.type === 2) { // voice channel
@@ -208,13 +208,15 @@ module.exports = class AuroraGSI {
   };
 
   detectPresence = (props) => {
-    if (props.updates.some(user => user.user.id === this.getCurrentUser()?.id)) {
+    if (!props.updates.some(user => user.user.id === this.getCurrentUser()?.id)) {
       return;
     }
     console.log('[AuroraGSI] presence')
     const localUser = this.getCurrentUser();
     const localStatus = this.getLocalStatus();
-    this.json.user.id = localUser?.id ?? -1;
+    this.json.user.id = parseInt(localUser?.id ?? -1);
+    if (this.json.user.status === localStatus)
+      return;
     this.json.user.status = localStatus ?? '';
     this.sendUpdate();
   };
@@ -297,7 +299,7 @@ module.exports = class AuroraGSI {
         appid: -1
       },
       user: {
-        id: this.getCurrentUser()?.id,
+        id: parseInt(this.getCurrentUser()?.id),
         status: this.getLocalStatus(),
         self_mute: this.isSelfMute(),
         self_deafen: this.isSelfDeaf(),
