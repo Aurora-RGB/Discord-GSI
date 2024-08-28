@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.6.2
+ * @version 2.6.3
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -103,7 +103,7 @@ module.exports = class AuroraGSI {
     ]
   }
 
-  async getLocalStatus() {
+  getLocalStatus() {
     if (userIdModule?.getState){
       return userIdModule.getState(this.getCurrentUser().id);
     }
