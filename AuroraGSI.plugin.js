@@ -36,11 +36,11 @@ you sure it's even installed?", 0, "Can't install myself", 0x10);
 @else@*/
 
 function returnModuleInstant(props) {
-    return BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps(props), {first: true})
+    return BdApi.Webpack.getModule(BdApi.Webpack.Filters.byKeys(props), {first: true})
 }
 
 async function returnModule(props) {
-    return await BdApi.Webpack.waitForModule(BdApi.Webpack.Filters.byProps(props), {first: true})
+    return await BdApi.Webpack.waitForModule(BdApi.Webpack.Filters.byKeys(props), {first: true})
 }
 
 async function returnStore(name) {
