@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.6.5
+ * @version 2.6.6
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -40,14 +40,14 @@ function returnModuleInstant(props) {
 }
 
 async function returnModule(props) {
-    return await BdApi.Webpack.waitForModule(BdApi.Webpack.Filters.byKeys(props), {first: true})
+    return await BdApi.Webpack.waitForModule(BdApi.Webpack.Filters.byKeys(props), {first: true, searchExports: false})
 }
 
 async function returnStore(name) {
     return await BdApi.Webpack.getStore(name)
 }
 
-const fluxModule = returnModule(['wait']);
+const fluxModule = BdApi.Webpack.getStore("UserStore")._dispatcher;
 const userModule = returnModule(['getUser']);
 const muteModule = returnModule(['isMute']);
 const callsModule = returnModule(['getCalls']);
@@ -268,7 +268,7 @@ module.exports = class AuroraGSI {
             this.getGuild = guildCountModule.getGuild;
         })
 
-        this.FluxDispatcher = await fluxModule;
+        this.FluxDispatcher = fluxModule;
         let muteModuleR = await muteModule;
         const {getUser} = await userModule,
             {getCalls} = await callsModule,
@@ -339,9 +339,11 @@ module.exports = class AuroraGSI {
 
         this.voice = {};
         this.mentions = 0;
+        this.ready = true;
     }
 
     stop() {
+        if (!this.ready) return;
         this.ready = false;
         this.events.forEach(x => this.FluxDispatcher.unsubscribe(x.eventName, x.method))
     }
