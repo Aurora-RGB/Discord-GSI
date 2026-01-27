@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "strict": false,
+    "strictNullChecks": true,
+    "noImplicitAny": false,
+    "allowJs": true,
+    "checkJs": true,
+    "target": "es2019",
+    "moduleResolution": "node",
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/**/*",
+    "*.js"
+  ]
+}
