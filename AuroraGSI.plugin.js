@@ -371,14 +371,14 @@ module.exports = class AuroraGSI {
     }
 
     start() {
-        const lastVersion = BdData.load('PingNotification', 'lastVersion');
+        const lastVersion = BdData.load('AuroraGSI', 'lastVersion');
         if (lastVersion !== this.meta.version) {
             BdUI.showChangelogModal({
                 title: this.meta.name,
                 subtitle: this.meta.version,
                 changes: config.changelog
             });
-            BdData.save('PingNotification', 'lastVersion', this.meta.version);
+            BdData.save('AuroraGSI', 'lastVersion', this.meta.version);
         }
 
         const user = getCurrentUser()
