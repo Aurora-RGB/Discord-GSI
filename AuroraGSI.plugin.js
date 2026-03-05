@@ -412,7 +412,10 @@ module.exports = class AuroraGSI {
             }
 
             // update json.voice_participants for the user
-            const participantObject = this.json.voice_participants[userId] || {};
+            const participantObject = this.json.voice_participants[userId];
+            if (!participantObject){
+                return; // if the user is not in the current voice channel, or we are leaving the channel
+            }
             participantObject.is_speaking = isSpeaking;
             this.json.voice_participants[userId] = participantObject;
 
