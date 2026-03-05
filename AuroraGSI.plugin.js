@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.6.7
+ * @version 2.7.0
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -14,10 +14,10 @@ const config = {
     // changelog types: "added", "fixed", "removed", "improved"
     changelog: [
         {
-            "title": "2.6.7",
-            "type": "fixed",
+            "title": "2.7.0",
+            "type": "added",
             "items": [
-                "Fixed user state (online/idle/dnd/invisible) not updating correctly",
+                "Added voice channel participants data and whether they are speaking to the JSON output.",
             ]
         },
     ],
@@ -51,10 +51,9 @@ function returnStore(name) {
     return BdWebpack.getStore(name)
 }
 const ChannelStore = returnStore("ChannelStore");
+const SelectedChannelStore = returnStore("SelectedChannelStore")
 const VoiceStateStore = returnStore("VoiceStateStore")
 const Dispatcher = returnStore("UserStore")._dispatcher
-
-const getChannel = toSafeFunction(ChannelStore, ChannelStore?.getChannel)
 
 function toModuleFunction(functionName) {
     const modules = BdWebpack.getModules(moduleFilters.byKeys(functionName))
@@ -87,6 +86,8 @@ const [
     { filter: moduleFilters.byKeys('isMute', 'isDeaf', 'isSelfMute', 'isSelfDeaf') },
     { filter: moduleFilters.byKeys('getGuild', 'getGuilds') },
 )
+
+const getChannel = toSafeFunction(ChannelStore, ChannelStore?.getChannel)
 const getUser = toSafeFunction(userModule, userModule?.getUser)
 const getCurrentUser = toSafeFunction(userModule, userModule?.getCurrentUser)
 const isMute = toSafeFunction(muteModule, muteModule?.isMute)
@@ -184,7 +185,10 @@ module.exports = class AuroraGSI {
             },
             user: {
                 id: -1,
+                idString: '-1',
                 status: '',
+                mute: false,
+                deafen: false,
                 self_mute: false,
                 self_deafen: false,
                 mentions: false,
@@ -209,6 +213,7 @@ module.exports = class AuroraGSI {
                 name: '',
                 somebody_speaking: false,
             },
+            voice_participants: {},
             updateTime: Date.now()
         }
     }
@@ -274,21 +279,62 @@ module.exports = class AuroraGSI {
             if (!this.voice.name) {
                 this.speakers.clear()
             }
+            this.updateVoiceParticipants(voiceChannel.id)
         } else {
             this.json.voice.id = -1
             this.json.voice.type = -1
             this.json.voice.name = ''
             this.speakers.clear()
+            this.json.voice_participants = {}
         }
         this.sendUpdate()
     }
 
-    onVoiceState = () => {
-        const voice = {}
-        voice.self_mute = isSelfMute()
-        voice.self_deafen = isSelfDeaf()
-        voice.mute = isMute()
-        voice.deafen = isDeaf()
+    updateVoiceParticipants = (/** @type {string} */ channelIdString) => {
+        const idString = this.json.user.idString
+        // copy object to avoid mutating the original in the store
+        const voiceStates = VoiceStateStore.getVoiceStatesForChannel(channelIdString)
+        this.json.voice_participants = Object.fromEntries(
+            Object.entries(voiceStates).filter(([key, value]) => {
+                // not current user
+                // not in the same channel (users leaving have empty channelId, so they will be filtered out)
+                return key !== idString && value.channelId === channelIdString
+            })
+        )
+    }
+
+    onVoiceState = (props) => {
+        let channelId = ''
+        let updateParticipants = false
+        props.voiceStates.forEach(voiceState => {
+            channelId = voiceState.channelId
+            const userId = voiceState.userId
+
+            if (userId === getCurrentUser()?.id) {
+                this.onUserVoiceStateUpdate(voiceState);
+            }
+            else if (channelId === this.json.voice.id.toString()) { // current channel update, but not current user, update participants
+                const participantObject = this.json.voice_participants[userId] || {};
+                if (participantObject.mute !== voiceState.mute || participantObject.deaf !== voiceState.deaf) { // updated state
+                    updateParticipants = true
+                }
+            }else if(voiceState.oldChannelId === this.json.voice.id.toString()){    // user left the current channel
+                updateParticipants = true
+            }
+        })
+        if (updateParticipants) {
+            this.updateVoiceParticipants(channelId)
+        }
+    }
+
+    onUserVoiceStateUpdate = (voiceState) => {
+        const voice = {
+            self_mute: voiceState.selfMute,
+            self_deafen: voiceState.selfDeaf,
+            mute: voiceState.mute || voiceState.selfMute,
+            deafen: voiceState.deaf || voiceState.selfDeaf,
+        }
+        console.log("[AuroraGSI] Voice state update for current user:", voice)
         if (this.voice.mute === voice.mute && this.voice.deafen === voice.deafen) {
             return
         }
@@ -349,23 +395,28 @@ module.exports = class AuroraGSI {
     onSpeech = (props) => {
         const userId = props.userId
         const speakingFlags = props.speakingFlags
+        // check for props.speakingFlags bit 1
+        const isSpeaking = (speakingFlags & 1) === 1
+
         if (userId === getCurrentUser()?.id) {
-            if (this.json.user.is_speaking === speakingFlags)
+            if (this.json.user.is_speaking === isSpeaking)
                 return
-            this.json.user.is_speaking = speakingFlags > 0
+            this.json.user.is_speaking = isSpeaking
+
             this.sendUpdate()
         } else {
-            // check for props.speakingFlags bit 1
-            const isSpeaking = (speakingFlags & 1) === 1
             if (isSpeaking) {
                 this.speakers.add(userId)
             } else {
                 this.speakers.delete(userId)
             }
-            const isSomeoneSpeaking = this.speakers.size > 0
-            if (this.json.voice.somebody_speaking === isSomeoneSpeaking)
-                return
-            this.json.voice.somebody_speaking = isSomeoneSpeaking
+
+            // update json.voice_participants for the user
+            const participantObject = this.json.voice_participants[userId] || {};
+            participantObject.is_speaking = isSpeaking;
+            this.json.voice_participants[userId] = participantObject;
+
+            this.json.voice.somebody_speaking = this.speakers.size > 0
             this.sendUpdate()
         }
     }
@@ -384,6 +435,10 @@ module.exports = class AuroraGSI {
         const user = getCurrentUser()
         const unreadGuilds = Object.values(getMutableGuildStates() ?? {})
             .filter(obj => Object.values(obj).includes(true))
+
+        const voiceChannelId = SelectedChannelStore.getVoiceChannelId();
+        const voiceChannel = getChannel(voiceChannelId)
+
         this.json = {
             provider: {
                 name: 'discord',
@@ -391,7 +446,10 @@ module.exports = class AuroraGSI {
             },
             user: {
                 id: Number.parseInt(user?.id),
+                idString: user?.id ?? '-1',
                 status: getLocalStatus(),
+                mute: isMute(),
+                deafen: isDeaf(),
                 self_mute: isSelfMute(),
                 self_deafen: isSelfDeaf(),
                 mentions: getTotalMentionCount()?.length > 0,
@@ -411,19 +469,15 @@ module.exports = class AuroraGSI {
                 name: ''
             },
             voice: {
-                id: -1,
-                type: -1,
-                name: '',
+                id: voiceChannelId == null ? -1 : Number.parseInt(voiceChannelId),
+                type: voiceChannel?.type ?? -1,
+                name: voiceChannel?.name ?? '',
                 somebody_speaking: false,
             },
+            voice_participants: {},
             updateTime: Date.now()
         }
-
-        const voiceState = VoiceStateStore.getDiscoverableVoiceStateForUser(user.id)
-        const channelId = voiceState?.channelId
-        if (channelId){
-            this.updateVoiceChannel(channelId);
-        }
+        this.updateVoiceParticipants(voiceChannelId)
 
         this.events.forEach(x => Dispatcher.subscribe(x.eventName, x.method))
 
