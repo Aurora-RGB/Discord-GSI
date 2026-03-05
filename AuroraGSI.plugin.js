@@ -20,6 +20,13 @@ const config = {
                 "Added voice channel participants data and whether they are speaking to the JSON output.",
             ]
         },
+        {
+            "title": "2.7.1",
+            "type": "improved",
+            "items": [
+                "Improve channel participant updates with user connect/disconnect",
+            ]
+        },
     ],
 }
 
@@ -209,6 +216,7 @@ module.exports = class AuroraGSI {
             },
             voice: {
                 id: -1,
+                idString: '-1',
                 type: -1,
                 name: '',
                 somebody_speaking: false,
@@ -269,21 +277,29 @@ module.exports = class AuroraGSI {
     onVoiceChannelSelect = (props) => {
         const voiceChannel = getChannel(props.channelId)
         if (voiceChannel) {
-            this.json.voice.type = voiceChannel.type
-            this.json.voice.id = Number.parseInt(voiceChannel.id)
+            let voiceName = ''
             if (voiceChannel.type === 1) { // call
-                this.json.voice.name = getUser(voiceChannel.recipients[0])?.username
+                voiceName = getUser(voiceChannel.recipients[0])?.username
             } else if (voiceChannel.type === 2) { // voice channel
-                this.json.voice.name = voiceChannel.name
+                voiceName = voiceChannel.name
             }
-            if (!this.voice.name) {
-                this.speakers.clear()
+            this.json.voice = {
+                type: voiceChannel.type,
+                id: Number.parseInt(voiceChannel.id),
+                idString: voiceChannel.id,
+                name: voiceName,
+                somebody_speaking: false,
             }
+            this.speakers.clear()
             this.updateVoiceParticipants(voiceChannel.id)
         } else {
-            this.json.voice.id = -1
-            this.json.voice.type = -1
-            this.json.voice.name = ''
+            this.json.voice = {
+                id: -1,
+                idString: '-1',
+                type: -1,
+                name: '',
+                somebody_speaking: false,
+            }
             this.speakers.clear()
             this.json.voice_participants = {}
         }
@@ -295,11 +311,12 @@ module.exports = class AuroraGSI {
         // copy object to avoid mutating the original in the store
         const voiceStates = VoiceStateStore.getVoiceStatesForChannel(channelIdString)
         this.json.voice_participants = Object.fromEntries(
-            Object.entries(voiceStates).filter(([key, value]) => {
-                // not current user
-                // not in the same channel (users leaving have empty channelId, so they will be filtered out)
-                return key !== idString && value.channelId === channelIdString
-            })
+            Object.entries(voiceStates)
+                .filter(([key, value]) => {
+                    // not current user
+                    // in the same channel (users leaving have empty channelId, so they will be filtered out)
+                    return key !== idString && value.channelId === channelIdString
+                })
         )
     }
 
@@ -307,23 +324,25 @@ module.exports = class AuroraGSI {
         let channelId = ''
         let updateParticipants = false
         props.voiceStates.forEach(voiceState => {
-            channelId = voiceState.channelId
+            if (voiceState.channelId)
+                channelId = voiceState.channelId
             const userId = voiceState.userId
 
             if (userId === getCurrentUser()?.id) {
                 this.onUserVoiceStateUpdate(voiceState);
             }
-            else if (channelId === this.json.voice.id.toString()) { // current channel update, but not current user, update participants
+            else if (voiceState.channelId === this.json.voice.idString) { // current channel update, but not current user, update participants
                 const participantObject = this.json.voice_participants[userId] || {};
                 if (participantObject.mute !== voiceState.mute || participantObject.deaf !== voiceState.deaf) { // updated state
                     updateParticipants = true
                 }
-            }else if(voiceState.oldChannelId === this.json.voice.id.toString()){    // user left the current channel
+            }else if(voiceState.oldChannelId === this.json.voice.idString){    // user left the current channel
                 updateParticipants = true
             }
         })
         if (updateParticipants) {
             this.updateVoiceParticipants(channelId)
+            this.sendUpdate()
         }
     }
 
@@ -334,7 +353,6 @@ module.exports = class AuroraGSI {
             mute: voiceState.mute || voiceState.selfMute,
             deafen: voiceState.deaf || voiceState.selfDeaf,
         }
-        console.log("[AuroraGSI] Voice state update for current user:", voice)
         if (this.voice.mute === voice.mute && this.voice.deafen === voice.deafen) {
             return
         }
@@ -411,11 +429,10 @@ module.exports = class AuroraGSI {
                 this.speakers.delete(userId)
             }
 
+            if (this.json.voice.id === -1)
+                return; // if we are not in a voice channel, ignore
             // update json.voice_participants for the user
-            const participantObject = this.json.voice_participants[userId];
-            if (!participantObject){
-                return; // if the user is not in the current voice channel, or we are leaving the channel
-            }
+            const participantObject = this.json.voice_participants[userId] || {};
             participantObject.is_speaking = isSpeaking;
             this.json.voice_participants[userId] = participantObject;
 
@@ -473,6 +490,7 @@ module.exports = class AuroraGSI {
             },
             voice: {
                 id: voiceChannelId == null ? -1 : Number.parseInt(voiceChannelId),
+                idString: voiceChannelId ?? '-1',
                 type: voiceChannel?.type ?? -1,
                 name: voiceChannel?.name ?? '',
                 somebody_speaking: false,
