@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.7.1
+ * @version 2.7.2
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -25,6 +25,13 @@ const config = {
             "type": "improved",
             "items": [
                 "Improve channel participant updates with user connect/disconnect",
+            ]
+        },
+        {
+            "title": "2.7.2",
+            "type": "fixed",
+            "items": [
+                "Fix voice participant muted state not updating with self mute change",
             ]
         },
     ],
@@ -332,10 +339,7 @@ module.exports = class AuroraGSI {
                 this.onUserVoiceStateUpdate(voiceState);
             }
             else if (voiceState.channelId === this.json.voice.idString) { // current channel update, but not current user, update participants
-                const participantObject = this.json.voice_participants[userId] || {};
-                if (participantObject.mute !== voiceState.mute || participantObject.deaf !== voiceState.deaf) { // updated state
-                    updateParticipants = true
-                }
+                updateParticipants = true
             }else if(voiceState.oldChannelId === this.json.voice.idString){    // user left the current channel
                 updateParticipants = true
             }
