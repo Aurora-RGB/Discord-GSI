@@ -18,6 +18,7 @@ const config = {
             "type": "fixed",
             "items": [
                 "Fix voice participants sometimes not updating with join/leave events",
+                "Update unread state on channel select to fix some edge cases"
             ]
         },
     ],
@@ -166,6 +167,7 @@ module.exports = class AuroraGSI {
         //event names: https://github.com/dorpier/dorpier/wiki/Dispatcher-Events
         this.events = [
             {eventName: 'MESSAGE_CREATE', method: this.onMessage},
+            {eventName: 'RECOMPUTE_READ_STATES', method: this.onRecomputeReadStates},
             {eventName: 'CHANNEL_SELECT', method: this.onChannelSelected},
             {eventName: 'VOICE_CHANNEL_SELECT', method: this.onVoiceChannelSelect},
             {eventName: 'PRESENCE_UPDATES', method: this.onPresenceUpdate},
@@ -265,6 +267,7 @@ module.exports = class AuroraGSI {
             this.json.text.type = -1
             this.json.text.name = ''
         }
+        this.onRecomputeReadStates()
     }
 
     onVoiceChannelSelect = (props) => {
@@ -370,6 +373,20 @@ module.exports = class AuroraGSI {
         this.json.user.unread_guilds_count = unread
 
         this.lastMentions = mentions
+        this.sendUpdate()
+    }
+
+    onRecomputeReadStates = () => {
+        const unread = Object.values(getMutableGuildStates() ?? {})
+            .filter(obj => Object.values(obj).includes(true))
+            .length
+        if (unread === this.json.user.unread_guilds_count) {
+            return
+        }
+
+        this.json.user.unread_messages = unread > 0
+        this.json.user.unread_guilds_count = unread
+
         this.sendUpdate()
     }
 
