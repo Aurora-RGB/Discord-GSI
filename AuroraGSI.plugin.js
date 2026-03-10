@@ -3,7 +3,7 @@
  * @author Popato, DrMeteor & Aytackydln
  * @description Sends information to Aurora about users connecting to/disconnecting from, mute/deafen status
  *       https://www.project-aurora.com/
- * @version 2.7.2
+ * @version 2.7.3
  * @donate https://github.com/Aurora-RGB/Aurora
  * @website http://www.project-aurora.com/
  * @source https://github.com/Aurora-RGB/Discord-GSI
@@ -14,24 +14,10 @@ const config = {
     // changelog types: "added", "fixed", "removed", "improved"
     changelog: [
         {
-            "title": "2.7.0",
-            "type": "added",
-            "items": [
-                "Added voice channel participants data and whether they are speaking to the JSON output.",
-            ]
-        },
-        {
-            "title": "2.7.1",
-            "type": "improved",
-            "items": [
-                "Improve channel participant updates with user connect/disconnect",
-            ]
-        },
-        {
-            "title": "2.7.2",
+            "title": "2.7.3",
             "type": "fixed",
             "items": [
-                "Fix voice participant muted state not updating with self mute change",
+                "Fix voice participants sometimes not updating with join/leave events",
             ]
         },
     ],
@@ -328,24 +314,22 @@ module.exports = class AuroraGSI {
     }
 
     onVoiceState = (props) => {
-        let channelId = ''
         let updateParticipants = false
         props.voiceStates.forEach(voiceState => {
-            if (voiceState.channelId)
-                channelId = voiceState.channelId
             const userId = voiceState.userId
 
             if (userId === getCurrentUser()?.id) {
                 this.onUserVoiceStateUpdate(voiceState);
             }
             else if (voiceState.channelId === this.json.voice.idString) { // current channel update, but not current user, update participants
+                this.json.voice_participants[userId] = voiceState
                 updateParticipants = true
             }else if(voiceState.oldChannelId === this.json.voice.idString){    // user left the current channel
+                delete this.json.voice_participants[userId]
                 updateParticipants = true
             }
         })
         if (updateParticipants) {
-            this.updateVoiceParticipants(channelId)
             this.sendUpdate()
         }
     }
