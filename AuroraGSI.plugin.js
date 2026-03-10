@@ -170,7 +170,7 @@ module.exports = class AuroraGSI {
             {eventName: 'RECOMPUTE_READ_STATES', method: this.onRecomputeReadStates},
             {eventName: 'CHANNEL_SELECT', method: this.onChannelSelected},
             {eventName: 'VOICE_CHANNEL_SELECT', method: this.onVoiceChannelSelect},
-            {eventName: 'PRESENCE_UPDATES', method: this.onPresenceUpdate},
+            {eventName: 'SELF_PRESENCE_STORE_UPDATE', method: this.onPresenceUpdate},
             {eventName: 'SPEAKING', method: this.onSpeech},
             {eventName: 'CALL_CREATE', method: this.onCall},
             {eventName: 'VOICE_STATE_UPDATES', method: this.onVoiceState},
@@ -391,15 +391,7 @@ module.exports = class AuroraGSI {
     }
 
     onPresenceUpdate = (props) => {
-        if (!props.updates.some(user => user.user.id === getCurrentUser()?.id)) {
-            return
-        }
-        const localUser = getCurrentUser()
-        const localStatus = getLocalStatus()
-        this.json.user.id = Number.parseInt(localUser?.id ?? -1)
-        if (this.json.user.status === localStatus)
-            return
-        this.json.user.status = localStatus ?? ''
+        this.json.user.status = props.status
         this.sendUpdate()
     }
 
